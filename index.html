@@ -21,7 +21,8 @@ h1,h2,h3,h4,p{margin:0}
 header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top));background:var(--bg)}
 header h1{font-size:20px;flex:1}
 #back{font-size:26px;line-height:1;padding:0 8px 4px 0}
-#syncdot{width:34px;height:34px;display:grid;place-items:center}
+#syncdot,#eye{width:34px;height:34px;display:grid;place-items:center}
+#eye svg{width:22px;height:22px;fill:none;stroke:var(--mut);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #syncdot i{width:11px;height:11px;border-radius:50%;background:var(--mut);display:block}
 #syncdot.ok i{background:var(--pos)}#syncdot.pend i{background:var(--warn)}#syncdot.err i{background:var(--neg)}
 main{padding:0 16px}
@@ -100,7 +101,7 @@ svg text{fill:var(--mut);font-size:9px}
 </style>
 </head>
 <body>
-<header><button id="back" data-act="back" hidden aria-label="Back">‹</button><h1 id="title">FinTrack</h1><button id="syncdot" data-act="go" data-sub="settings" aria-label="Backup status"><i></i></button></header>
+<header><button id="back" data-act="back" hidden aria-label="Back">‹</button><h1 id="title">FinTrack</h1><button id="eye" data-act="eye" aria-label="Hide balances"></button><button id="syncdot" data-act="go" data-sub="settings" aria-label="Backup status"><i></i></button></header>
 <main id="view"></main>
 <button id="fab" data-act="addTx" aria-label="Add transaction">+</button>
 <nav><div>
@@ -120,6 +121,7 @@ const $=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=n=>Math.round(Math.abs(n)).toLocaleString('id-ID');
 const fmt=n=>(n<0?'-':'')+'Rp '+num(n);
+const fmtH=n=>cfg.hide?'Rp •••••':fmt(n);
 const short=n=>{const a=Math.abs(n);return a>=1e9?(a/1e9).toFixed(1)+'B':a>=1e6?(a/1e6).toFixed(1)+'M':a>=1e3?Math.round(a/1e3)+'K':String(Math.round(a))};
 const pad=n=>String(n).padStart(2,'0');
 const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
@@ -239,9 +241,9 @@ const V={};
 V.home=()=>{const m=monthTotals(month),b=balances(),total=S.accounts.filter(a=>!a.archived).reduce((s,a)=>s+b[a.id],0);
   const due=dueBills(),bt=S.budgets.reduce((s,x)=>s+x.amount,0),bs=S.budgets.reduce((s,x)=>s+(m.byCat[x.categoryId]||0),0);
   const recent=sortedTx(S.transactions.filter(t=>t.date.startsWith(month))).slice(0,6);
-  return monthBar()+`<section class="hero"><small>Total balance</small><h2>${fmt(total)}</h2><div class="two"><div><small>Income</small><b>${fmt(m.inc)}</b></div><div><small>Expenses</small><b>${fmt(m.exp)}</b></div><div><small>Net</small><b>${fmt(m.inc-m.exp)}</b></div></div></section>
+  return monthBar()+`<section class="hero"><small>Total balance</small><h2>${fmtH(total)}</h2><div class="two"><div><small>Income</small><b>${fmt(m.inc)}</b></div><div><small>Expenses</small><b>${fmt(m.exp)}</b></div><div><small>Net</small><b>${fmt(m.inc-m.exp)}</b></div></div></section>
   ${due.length?`<section><h3>Bills due <button class="link" data-act="go" data-sub="bills">All bills</button></h3>${due.map(({b:x,left})=>`<div class="row" data-act="payBill" data-id="${x.id}" data-now="1"><span class="ico">🧾</span><div class="grow"><b>${esc(x.name)}</b><small>${left<0?`Overdue by ${-left} day${left<-1?'s':''}`:left===0?'Due today':`Due in ${left} day${left>1?'s':''}`}</small></div><span class="amt">${fmt(x.amount)}</span></div>`).join('')}</section>`:''}
-  <div class="scroll">${S.accounts.filter(a=>!a.archived).map(a=>`<div class="chip" data-act="editAcc" data-id="${a.id}"><small>${esc(a.name)}</small><b class="${b[a.id]<0?'neg':''}">${fmt(b[a.id])}</b></div>`).join('')}</div>
+  <div class="scroll">${S.accounts.filter(a=>!a.archived).map(a=>`<div class="chip" data-act="editAcc" data-id="${a.id}"><small>${esc(a.name)}</small><b class="${!cfg.hide&&b[a.id]<0?'neg':''}">${fmtH(b[a.id])}</b></div>`).join('')}</div>
   ${bt?`<section data-act="tab" data-tab="budget"><h3>Budget this month <span>${Math.round(bs/bt*100)}%</span></h3>${bar(bs,bt)}<small>${fmt(bs)} of ${fmt(bt)} · ${bt-bs>=0?fmt(bt-bs)+' left':fmt(bs-bt)+' over'}</small></section>`:''}
   ${S.goals.length?`<section><h3>Savings goals <button class="link" data-act="go" data-sub="goals">All goals</button></h3>${S.goals.slice(0,3).map(g=>{const s=goalSaved(g,b);return`<div class="row" data-act="goal" data-id="${g.id}"><div class="grow"><b>${esc(g.name)}</b>${bar2(s,g.target)}<small>${fmt(s)} of ${fmt(g.target)}</small></div></div>`}).join('')}</section>`:''}
   <section><h3>Recent transactions <button class="link" data-act="tab" data-tab="tx">See all</button></h3>${recent.map(txRow).join('')||'<div class="empty">No transactions this month.<br>Tap + to add your first one.</div>'}</section>`};
@@ -273,14 +275,14 @@ V.reports=()=>{const m=monthTotals(month),cats=S.categories.filter(c=>c.type===r
   ${cats.map(({c,v})=>`<div class="legend"><i style="background:${c.color}"></i><span>${c.icon} ${esc(c.name)}</span><small>${Math.round(v/tot*100)}%</small><b class="amt">${fmt(v)}</b></div>`).join('')||'<div class="empty">No data for this month.</div>'}</section>
   <section><h3>Last 6 months</h3>${bars}</section>
   <section><h3>Net worth trend <button class="link" data-act="go" data-sub="assets">Details</button></h3>${nwChart()}</section>`};
-function nwChart(){const h=[...S.nwHistory].sort((a,b)=>a.month<b.month?-1:1).slice(-12);if(h.length<2)return`<div class="big">${fmt(netWorth().total)}</div><small>The trend line appears after your second month of use.</small>`;
+function nwChart(){const h=[...S.nwHistory].sort((a,b)=>a.month<b.month?-1:1).slice(-12);if(h.length<2)return`<div class="big">${fmtH(netWorth().total)}</div><small>The trend line appears after your second month of use.</small>`;
   const mn=Math.min(...h.map(x=>x.value)),mx=Math.max(...h.map(x=>x.value)),rg=mx-mn||1;
   const pts=h.map((x,i)=>`${10+i*(280/(h.length-1))},${90-(x.value-mn)/rg*75}`).join(' ');
-  return`<div class="big">${fmt(h[h.length-1].value)}</div><svg viewBox="0 0 300 110" style="width:100%"><polyline points="${pts}" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><text x="10" y="106">${h[0].month}</text><text x="290" y="106" text-anchor="end">${h[h.length-1].month}</text></svg>`}
+  return`<div class="big">${fmtH(h[h.length-1].value)}</div><svg viewBox="0 0 300 110" style="width:100%"><polyline points="${pts}" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><text x="10" y="106">${h[0].month}</text><text x="290" y="106" text-anchor="end">${h[h.length-1].month}</text></svg>`}
 
 V.more=()=>`<div class="menu">${[['accounts','👛','Accounts','Wallets, banks, e-wallets'],['goals','🎯','Savings Goals','Track what you save for'],['debts','🤝','Debts & Receivables','Money you owe or lent'],['assets','💎','Assets & Net Worth','Investments and property'],['bills','🧾','Bills','Monthly due dates'],['recurring','🔁','Recurring','Automatic transactions'],['categories','🏷️','Categories','Income and expense types'],['settings','☁️','Backup & Settings','Google Sheets, export']].map(([k,i,t,d])=>`<button data-act="go" data-sub="${k}"><span>${i}</span><b>${t}</b><small>${d}</small></button>`).join('')}</div>`;
 
-V.accounts=()=>{const b=balances();return`<section>${S.accounts.map(a=>`<div class="row" data-act="editAcc" data-id="${a.id}"><span class="ico">👛</span><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.type)}${a.archived?' · Archived':''}</small></div><span class="amt ${b[a.id]<0?'neg':''}">${fmt(b[a.id])}</span></div>`).join('')}</section><button class="btn full" data-act="editAcc">+ Add account</button>`};
+V.accounts=()=>{const b=balances();return`<section>${S.accounts.map(a=>`<div class="row" data-act="editAcc" data-id="${a.id}"><span class="ico">👛</span><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.type)}${a.archived?' · Archived':''}</small></div><span class="amt ${!cfg.hide&&b[a.id]<0?'neg':''}">${fmtH(b[a.id])}</span></div>`).join('')}</section><button class="btn full" data-act="editAcc">+ Add account</button>`};
 
 V.goals=()=>{const b=balances();return(S.goals.length?`<section>${S.goals.map(g=>{const s=goalSaved(g,b),p=g.target?Math.round(s/g.target*100):0;return`<div class="row" data-act="goal" data-id="${g.id}"><span class="ico">${s>=g.target?'🎉':'🎯'}</span><div class="grow"><b>${esc(g.name)}</b>${bar2(s,g.target)}<small>${fmt(s)} of ${fmt(g.target)} · ${p}%${g.deadline?' · by '+g.deadline:''}</small></div></div>`}).join('')}</section>`:'<div class="empty">No savings goals yet.</div>')+'<button class="btn full" data-act="editGoal">+ Add goal</button>'};
 
@@ -288,9 +290,9 @@ V.debts=()=>{const sec=(kind,title)=>{const l=S.debts.filter(d=>d.kind===kind);i
   return`<section><h3>${title}<span>${fmt(tot)}</span></h3>${l.map(d=>{const r=debtRemaining(d);return`<div class="row" data-act="debt" data-id="${d.id}"><span class="ico">🤝</span><div class="grow"><b>${esc(d.person)}</b><small>${r<=0?'Settled':'Remaining of '+fmt(d.amount)}${d.dueDate&&r>0?' · due '+d.dueDate:''}</small></div>${r<=0?'<span class="tag">Paid</span>':`<span class="amt">${fmt(r)}</span>`}</div>`}).join('')}</section>`};
   return(sec('owe','I owe')+sec('lent','Owed to me')||'<div class="empty">No debts or receivables recorded.</div>')+'<button class="btn full" data-act="editDebt">+ Add debt / receivable</button>'};
 
-V.assets=()=>{const n=netWorth();return`<section class="hero"><small>Net worth</small><h2>${fmt(n.total)}</h2><div class="two"><div><small>Accounts</small><b>${fmt(n.acc)}</b></div><div><small>Assets</small><b>${fmt(n.assets)}</b></div></div><div class="two" style="margin-top:8px"><div><small>Receivables</small><b>${fmt(n.recv)}</b></div><div><small>Debts</small><b>${fmt(-n.owe)}</b></div></div></section>
+V.assets=()=>{const n=netWorth();return`<section class="hero"><small>Net worth</small><h2>${fmtH(n.total)}</h2><div class="two"><div><small>Accounts</small><b>${fmtH(n.acc)}</b></div><div><small>Assets</small><b>${fmtH(n.assets)}</b></div></div><div class="two" style="margin-top:8px"><div><small>Receivables</small><b>${fmtH(n.recv)}</b></div><div><small>Debts</small><b>${fmtH(-n.owe)}</b></div></div></section>
   <section><h3>Trend</h3>${nwChart()}</section>
-  ${S.assets.length?`<section><h3>Assets</h3>${S.assets.map(a=>`<div class="row" data-act="editAsset" data-id="${a.id}"><span class="ico">💎</span><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.type)}${a.updatedAt?' · updated '+a.updatedAt:''}</small></div><span class="amt">${fmt(a.value)}</span></div>`).join('')}</section>`:'<div class="empty">No assets yet. Add investments, gold, vehicles or property and update their value whenever it changes.</div>'}<button class="btn full" data-act="editAsset">+ Add asset</button>`};
+  ${S.assets.length?`<section><h3>Assets</h3>${S.assets.map(a=>`<div class="row" data-act="editAsset" data-id="${a.id}"><span class="ico">💎</span><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.type)}${a.updatedAt?' · updated '+a.updatedAt:''}</small></div><span class="amt">${fmtH(a.value)}</span></div>`).join('')}</section>`:'<div class="empty">No assets yet. Add investments, gold, vehicles or property and update their value whenever it changes.</div>'}<button class="btn full" data-act="editAsset">+ Add asset</button>`};
 
 V.bills=()=>{const paid=b=>S.billPayments.find(p=>p.billId===b.id&&p.month===month);const act=S.bills.filter(b=>b.active),tot=act.reduce((s,b)=>s+b.amount,0),pd=act.filter(paid).reduce((s,b)=>s+b.amount,0);
   return monthBar()+(S.bills.length?`<section><h3>Paid this month<span>${fmt(pd)} of ${fmt(tot)}</span></h3>${bar2(pd,tot)}</section><section>${S.bills.map(b=>{const p=paid(b);return`<div class="row" data-act="editBill" data-id="${b.id}"><span class="ico">🧾</span><div class="grow"><b>${esc(b.name)}</b><small>${fmt(b.amount)} · due day ${b.dueDay}${b.active?'':' · Inactive'}</small></div>${p?`<button class="tag" data-act="unpayBill" data-id="${p.id}">Paid ✓</button>`:b.active?`<button class="tag o" data-act="payBill" data-id="${b.id}">Pay</button>`:''}</div>`}).join('')}</section>`:'<div class="empty">No bills yet. Add monthly bills to get due-date reminders on the Home screen.</div>')+'<button class="btn full" data-act="editBill">+ Add bill</button>'};
@@ -310,14 +312,15 @@ V.settings=()=>`<section><h3>Automatic backup to Google Sheets</h3>
   <div class="row" data-act="exportJson"><div class="grow"><b>Export full backup (JSON)</b><small>Everything in one file</small></div></div>
   <label class="row"><div class="grow"><b>Import backup (JSON)</b><small>Replaces all data on this phone</small></div><input type="file" id="imp" accept="application/json,.json" hidden></label>
   <div class="row" data-act="reset"><div class="grow"><b class="neg">Erase all data</b><small>Start again from zero</small></div></div></section>
-  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.1 · data is stored on this device</p>`;
+  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.2 · data is stored on this device</p>`;
 function syncText(){if(!cfg.url)return'Not connected. Your data is stored only on this phone.';
   if(cfg.lastError)return'⚠️ Last backup failed: '+esc(cfg.lastError);
   const t=cfg.lastSync?new Date(cfg.lastSync).toLocaleString('en-GB'):'never';
   return(cfg.dirty?'Changes waiting to be backed up. ':'All changes backed up. ')+'Last backup: '+t}
 
 const TITLES={home:'FinTrack',tx:'Transactions',budget:'Budget',reports:'Reports',more:'More',accounts:'Accounts',goals:'Savings Goals',debts:'Debts & Receivables',assets:'Assets & Net Worth',bills:'Bills',recurring:'Recurring',categories:'Categories',settings:'Backup & Settings'};
-function render(){const p=sub||tab;$('#title').textContent=TITLES[p];$('#back').hidden=!sub;$('#view').innerHTML=V[p]();
+const EYE='<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',EYE_OFF='<svg viewBox="0 0 24 24"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>';
+function render(){$('#eye').innerHTML=cfg.hide?EYE_OFF:EYE;$('#eye').setAttribute('aria-label',cfg.hide?'Show balances':'Hide balances');const p=sub||tab;$('#title').textContent=TITLES[p];$('#back').hidden=!sub;$('#view').innerHTML=V[p]();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   $('#fab').hidden=!!sub&&sub!=='accounts';dot()}
 function dot(){const d=$('#syncdot');d.className=!cfg.url?'':cfg.lastError?'err':cfg.dirty?'pend':'ok';const s=$('#syncStatus');if(s)s.innerHTML=syncText()}
@@ -393,6 +396,7 @@ const A={
  editAsset:d=>assetForm(d.id),editBill:d=>billForm(d.id),payBill:d=>payBill(d.id,d.now),
  unpayBill:d=>{if(confirm('Mark as unpaid? The payment transaction will be removed too.')){const p=byId('billPayments',d.id);remove('transactions',p.txId);remove('billPayments',d.id);save()}},
  editRec:d=>recForm(d.id),
+ eye:()=>{cfg.hide=!cfg.hide;saveCfg();render()},
  formDelete:()=>formCtx&&formCtx.del(),
  key:async d=>{const msg=t=>$('#lkmsg').textContent=t;if(Date.now()<pinWait){msg('Too many attempts. Try again in '+Math.ceil((pinWait-Date.now())/1000)+' s');return}
    if(d.k==='del')pinBuf=pinBuf.slice(0,-1);else if(pinBuf.length<cfg.pinLen)pinBuf+=d.k;msg('');drawDots();
