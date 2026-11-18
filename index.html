@@ -112,7 +112,7 @@ svg text{fill:var(--mut);font-size:9px}
 <button data-act="tab" data-tab="more"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>More</button>
 </div></nav>
 <div id="modal" hidden><div class="sheet" id="sheet"></div></div>
-<div id="lock" hidden><div><div style="font-size:40px">🔒</div><h2>Enter PIN</h2><div id="lkdots"></div><p id="lkmsg"></p><div class="pad"><button data-act="key" data-k="1">1</button><button data-act="key" data-k="2">2</button><button data-act="key" data-k="3">3</button><button data-act="key" data-k="4">4</button><button data-act="key" data-k="5">5</button><button data-act="key" data-k="6">6</button><button data-act="key" data-k="7">7</button><button data-act="key" data-k="8">8</button><button data-act="key" data-k="9">9</button><span></span><button data-act="key" data-k="0">0</button><button data-act="key" data-k="del" aria-label="Delete">⌫</button></div></div></div>
+<div id="lock" hidden><div><div style="font-size:40px">🔒</div><h2 id="lkTitle">Enter PIN</h2><div id="lkdots"></div><p id="lkmsg"></p><div class="pad"><button data-act="key" data-k="1">1</button><button data-act="key" data-k="2">2</button><button data-act="key" data-k="3">3</button><button data-act="key" data-k="4">4</button><button data-act="key" data-k="5">5</button><button data-act="key" data-k="6">6</button><button data-act="key" data-k="7">7</button><button data-act="key" data-k="8">8</button><button data-act="key" data-k="9">9</button><button id="bioBtn" data-act="bioUnlock" aria-label="Use fingerprint" style="visibility:hidden">☝️</button><button data-act="key" data-k="0">0</button><button data-act="key" data-k="del" aria-label="Delete">⌫</button></div></div></div>
 <div id="toast"></div>
 <script>
 'use strict';
@@ -307,12 +307,13 @@ V.settings=()=>`<section><h3>Automatic backup to Google Sheets</h3>
   <button class="btn full" data-act="connect">Save &amp; connect</button>
   <p class="mut" style="margin-top:10px;font-size:13px" id="syncStatus">${syncText()}</p>
   ${cfg.url?'<div class="btns"><button class="btn ghost" data-act="syncNow">Back up now</button><button class="btn ghost" data-act="restore">Restore from backup</button></div>':''}</section>
-  <section><h3>App lock</h3><p class="mut" style="font-size:13px">${cfg.pinHash?'PIN lock is on. The app asks for your PIN when opened and after 1 minute in the background.':'Protect the app with a 4–6 digit PIN.'}</p><div class="btns">${cfg.pinHash?'<button class="btn ghost" data-act="pinSet">Change PIN</button><button class="btn ghost" data-act="pinOff">Turn off</button>':'<button class="btn" data-act="pinSet">Set PIN</button>'}</div></section>
+  <section><h3>App lock</h3><p class="mut" style="font-size:13px">${cfg.pinHash?'PIN lock is on. The app asks for your PIN when opened and after 1 minute in the background.':'Protect the app with a 4–6 digit PIN.'}</p><div class="btns">${cfg.pinHash?'<button class="btn ghost" data-act="pinSet">Change PIN</button><button class="btn ghost" data-act="pinOff">Turn off</button>':'<button class="btn" data-act="pinSet">Set PIN</button>'}</div>
+  ${cfg.pinHash?`<div class="row" style="margin-top:12px" data-act="${cfg.bioId?'bioOff':'bioOn'}"><span class="ico">☝️</span><div class="grow"><b>Fingerprint unlock</b><small>${cfg.bioId?'On — your PIN still works as a backup':'Off — tap to turn on'}</small></div><span class="tag ${cfg.bioId?'':'o'}">${cfg.bioId?'On':'Off'}</span></div>`:''}</section>
   <section><h3>Your data</h3><div class="row" data-act="exportCsv"><div class="grow"><b>Export transactions (CSV)</b><small>Open in Excel or Google Sheets</small></div></div>
   <div class="row" data-act="exportJson"><div class="grow"><b>Export full backup (JSON)</b><small>Everything in one file</small></div></div>
   <label class="row"><div class="grow"><b>Import backup (JSON)</b><small>Replaces all data on this phone</small></div><input type="file" id="imp" accept="application/json,.json" hidden></label>
   <div class="row" data-act="reset"><div class="grow"><b class="neg">Erase all data</b><small>Start again from zero</small></div></div></section>
-  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.2 · data is stored on this device</p>`;
+  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.3 · data is stored on this device</p>`;
 function syncText(){if(!cfg.url)return'Not connected. Your data is stored only on this phone.';
   if(cfg.lastError)return'⚠️ Last backup failed: '+esc(cfg.lastError);
   const t=cfg.lastSync?new Date(cfg.lastSync).toLocaleString('en-GB'):'never';
@@ -396,6 +397,9 @@ const A={
  editAsset:d=>assetForm(d.id),editBill:d=>billForm(d.id),payBill:d=>payBill(d.id,d.now),
  unpayBill:d=>{if(confirm('Mark as unpaid? The payment transaction will be removed too.')){const p=byId('billPayments',d.id);remove('transactions',p.txId);remove('billPayments',d.id);save()}},
  editRec:d=>recForm(d.id),
+ bioUnlock:()=>bioUnlock(true),
+ bioOn:()=>bioEnable(),
+ bioOff:()=>{if(confirm('Turn off fingerprint unlock? You will unlock with your PIN only.')){cfg.bioId='';saveCfg();render();toast('Fingerprint unlock turned off')}},
  eye:()=>{cfg.hide=!cfg.hide;saveCfg();render()},
  formDelete:()=>formCtx&&formCtx.del(),
  key:async d=>{const msg=t=>$('#lkmsg').textContent=t;if(Date.now()<pinWait){msg('Too many attempts. Try again in '+Math.ceil((pinWait-Date.now())/1000)+' s');return}
@@ -407,7 +411,7 @@ const A={
      (async()=>{if(has&&await hashPin(v.cur,cfg.pinSalt)!==cfg.pinHash){toast('Wrong current PIN — nothing changed');return}
        const salt=uid();cfg.pinHash=await hashPin(v.pin,salt);cfg.pinSalt=salt;cfg.pinLen=v.pin.length;await saveCfg();render();toast('PIN lock is on')})()}})},
  pinOff:()=>openForm({title:'Turn off PIN lock',saveLabel:'Turn off',values:{},fields:[{k:'cur',label:'Current PIN',type:'password',req:1}],
-   onSave:v=>{(async()=>{if(await hashPin(v.cur,cfg.pinSalt)!==cfg.pinHash){toast('Wrong PIN — lock is still on');return}cfg.pinHash='';cfg.pinSalt='';cfg.pinLen=0;await saveCfg();render();toast('PIN lock turned off')})()}}),
+   onSave:v=>{(async()=>{if(await hashPin(v.cur,cfg.pinSalt)!==cfg.pinHash){toast('Wrong PIN — lock is still on');return}cfg.pinHash='';cfg.pinSalt='';cfg.pinLen=0;cfg.bioId='';await saveCfg();render();toast('PIN lock turned off')})()}}),
  connect:async()=>{const url=$('#cfgUrl').value.trim(),token=$('#cfgToken').value.trim();if(!url&&!cfg.url){toast('Paste the Web app URL first');return}
    if(url&&!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)){toast('The URL should start with https://script.google.com and end with /exec');return}
    cfg.url=url;cfg.token=token;cfg.lastError='';draft={};await saveCfg();if(!url){render();toast('Backup disconnected');return}
@@ -447,7 +451,26 @@ window.addEventListener('popstate',()=>{if(skipPop){skipPop--;return}if(modalOpe
 let pinBuf='',pinFails=0,pinWait=0,hiddenAt=0;
 async function hashPin(pin,salt){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(salt+':'+pin));return[...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join('')}
 function drawDots(){$('#lkdots').innerHTML=[...Array(cfg.pinLen||4)].map((_,i)=>`<i class="${i<pinBuf.length?'on':''}"></i>`).join('')}
-function showLock(){pinBuf='';$('#lkmsg').textContent='';drawDots();$('#lock').hidden=false}
+const b64u=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const unb64u=str=>Uint8Array.from(atob(str.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
+let bioBusy=false;
+async function bioAvailable(){try{return!!(window.PublicKeyCredential&&await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())}catch(e){return false}}
+async function bioEnable(){
+  if(!await bioAvailable()){toast('Fingerprint is not available. Check that a fingerprint is registered in Android Settings and that you use Chrome.');return}
+  try{const c=await navigator.credentials.create({publicKey:{challenge:rnd(32),rp:{name:'FinTrack',id:location.hostname},user:{id:rnd(16),name:'FinTrack',displayName:'FinTrack app lock'},
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},timeout:60000,attestation:'none'}});
+    cfg.bioId=b64u(c.rawId);await saveCfg();render();toast('Fingerprint unlock is on')}
+  catch(e){toast(e.name==='NotAllowedError'?'Cancelled — fingerprint unlock is still off':'Could not turn on fingerprint: '+e.message)}}
+async function bioUnlock(manual){if(!cfg.bioId||bioBusy||$('#lock').hidden)return;bioBusy=true;
+  try{await navigator.credentials.get({publicKey:{challenge:rnd(32),rpId:location.hostname,allowCredentials:[{type:'public-key',id:unb64u(cfg.bioId),transports:['internal']}],userVerification:'required',timeout:60000}});
+    pinFails=0;pinBuf='';$('#lock').hidden=true}
+  catch(e){if(manual)$('#lkmsg').textContent='Fingerprint not recognised. Use your PIN.'}
+  finally{bioBusy=false}}
+function showLock(){pinBuf='';$('#lkmsg').textContent='';drawDots();
+  $('#lkTitle').textContent=cfg.bioId?'Touch the sensor or enter PIN':'Enter PIN';$('#bioBtn').style.visibility=cfg.bioId?'visible':'hidden';
+  $('#lock').hidden=false;if(cfg.bioId)setTimeout(()=>bioUnlock(false),250)}
+window.addEventListener('focus',()=>{if(cfg.bioId&&!$('#lock').hidden)bioUnlock(false)});
 
 /* ---------- Google Sheets backup ---------- */
 let syncing=false,syncTimer=null;
