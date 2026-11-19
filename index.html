@@ -89,6 +89,8 @@ nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;st
 #toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:12px;z-index:30;opacity:0;pointer-events:none;transition:opacity .2s;max-width:86vw;text-align:center}
 #toast.on{opacity:1}
 svg text{fill:var(--mut);font-size:9px}
+body.quick header,body.quick main,body.quick nav,body.quick #fab{visibility:hidden}
+body.quick #modal{background:var(--bg)}
 #lock{position:fixed;inset:0;z-index:40;background:var(--bg);display:grid;place-items:center;text-align:center}
 #lock[hidden]{display:none}
 #lock h2{font-size:20px;margin:8px 0 16px}
@@ -219,9 +221,9 @@ function dueBills(){const m=todayStr().slice(0,7),day=+todayStr().slice(8);
   return S.bills.filter(b=>b.active&&!S.billPayments.some(p=>p.billId===b.id&&p.month===m)).map(b=>({b,left:Math.min(b.dueDay,daysIn(m))-day})).filter(x=>x.left<=7).sort((a,b)=>a.left-b.left)}
 
 /* ---------- modal & forms ---------- */
-let modalOpen=false,skipPop=0,formCtx=null,draft={};
+let quickMode=false,modalOpen=false,skipPop=0,formCtx=null,draft={};
 function openSheet(html){$('#sheet').innerHTML=html;$('#modal').hidden=false;formCtx=null;if(!modalOpen){modalOpen=true;history.pushState({m:1},'')}}
-function closeModal(fromPop){if(!modalOpen)return;modalOpen=false;formCtx=null;$('#modal').hidden=true;if(!fromPop){skipPop++;history.back()}}
+function closeModal(fromPop){if(!modalOpen)return;modalOpen=false;formCtx=null;$('#modal').hidden=true;if(quickMode){quickMode=false;document.body.classList.remove('quick');if(cfg.pinHash)showLock()}if(!fromPop){skipPop++;history.back()}}
 function openForm({title,fields,values,onSave,onDelete,saveLabel}){
   const v={...values};
   const draw=()=>{const body=fields.filter(f=>!f.show||f.show(v)).map(f=>{const label=typeof f.label==='function'?f.label(v):f.label;
@@ -329,7 +331,7 @@ V.settings=()=>`<section><h3>Automatic backup to Google Sheets</h3>
   <div class="row" data-act="exportJson"><div class="grow"><b>Export full backup (JSON)</b><small>Everything in one file</small></div></div>
   <label class="row"><div class="grow"><b>Import backup (JSON)</b><small>Replaces all data on this phone</small></div><input type="file" id="imp" accept="application/json,.json" hidden></label>
   <div class="row" data-act="reset"><div class="grow"><b class="neg">Erase all data</b><small>Start again from zero</small></div></div></section>
-  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.6 · data is stored on this device</p>`;
+  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.7 · data is stored on this device</p>`;
 function syncText(){if(!cfg.url)return'Not connected. Your data is stored only on this phone.';
   if(cfg.lastError)return'⚠️ Last backup failed: '+esc(cfg.lastError);
   const t=cfg.lastSync?new Date(cfg.lastSync).toLocaleString('en-GB'):'never';
@@ -362,7 +364,7 @@ function txForm(id,preset){const t={...(id?byId('transactions',id):{type:preset|
        v.splits=JSON.stringify(list);v.categoryId=list[0].c}else v.splits='';
      const e=cleanTx(v);if(e)return e;if(id)assetEffect(byId('transactions',id),-1);if(!id)v.createdAt=Date.now();if(acc(v.accountId))cfg.lastAcc=v.accountId;
      const rec={...v};delete rec.isSplit;delete rec.splitRows;upsert('transactions',rec);assetEffect(rec,1);month=v.date.slice(0,7);
-     if(v.type==='expense'){const cats=v.splits?JSON.parse(v.splits).map(x=>x.c):[v.categoryId];const m=v.date.slice(0,7);
+     if(quickMode)toast('Expense saved');else if(v.type==='expense'){const cats=v.splits?JSON.parse(v.splits).map(x=>x.c):[v.categoryId];const m=v.date.slice(0,7);
        for(const c of cats){const b=S.budgets.find(x=>x.categoryId===c);if(!b)continue;const i=budgetInfo(b,m),n=cat(c)?.name||'';
          if(i.spent>i.avail){toast('🔴 '+n+' is over budget by '+fmt(i.spent-i.avail));break}
          if(i.avail>0&&i.spent/i.avail>=.8){toast('⚠️ '+n+': '+Math.round(i.spent/i.avail*100)+'% of budget used');break}}}},
@@ -525,7 +527,8 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 /* ---------- start ---------- */
 (async()=>{try{await idb.open();S=await idb.get('state');Object.assign(cfg,await idb.get('cfg')||{})}catch(e){toast('Storage is unavailable: '+e.message)}
   if(!S){S=seed();if(idb.db)idb.set('state',S)}else{const m=S.meta;S=normAll(S);S.meta=m||S.meta}
-  if(cfg.pinHash)showLock();
+  const qa0=new URLSearchParams(location.search).get('action');quickMode=qa0==='expense'&&!!cfg.pinHash;if(quickMode)document.body.classList.add('quick');
+  if(cfg.pinHash&&!quickMode)showLock();
   if(processRecurring())persist();
   render();if(cfg.dirty)scheduleSync();
   const qa=new URLSearchParams(location.search).get('action');if(qa){history.replaceState(null,'',location.pathname);if(qa==='expense'||qa==='transfer')txForm(null,qa)}
