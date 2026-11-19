@@ -1,8 +1,8 @@
 // FinTrack service worker — offline support.
 // The app page is loaded network-first, so new versions appear on the next
 // open (when online). No need to change this file when index.html changes.
-const CACHE = 'fintrack-v6';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'fintrack-v7';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './sc-expense.png', './sc-transfer.png'];
 const PAGE = './index.html';
 
 self.addEventListener('install', e => {
