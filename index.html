@@ -142,10 +142,10 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('on');
 const SCHEMA={
  accounts:{id:'s',name:'s',type:'s',initial:'n',archived:'b'},
  categories:{id:'s',name:'s',type:'s',icon:'s',color:'s'},
- transactions:{id:'s',date:'d',type:'s',amount:'n',accountId:'s',toAccountId:'s',categoryId:'s',note:'s',createdAt:'n'},
+ transactions:{id:'s',date:'d',type:'s',amount:'n',received:'n',accountId:'s',toAccountId:'s',categoryId:'s',note:'s',createdAt:'n'},
  budgets:{id:'s',categoryId:'s',amount:'n'},
  goals:{id:'s',name:'s',target:'n',saved:'n',deadline:'d',accountId:'s'},
- recurring:{id:'s',type:'s',amount:'n',accountId:'s',toAccountId:'s',categoryId:'s',note:'s',freq:'s',startDate:'d',count:'n',endDate:'d',active:'b'},
+ recurring:{id:'s',type:'s',amount:'n',received:'n',accountId:'s',toAccountId:'s',categoryId:'s',note:'s',freq:'s',startDate:'d',count:'n',endDate:'d',active:'b'},
  debts:{id:'s',kind:'s',person:'s',amount:'n',date:'d',dueDate:'d',accountId:'s',note:'s'},
  debtPayments:{id:'s',debtId:'s',amount:'n',date:'d',accountId:'s'},
  assets:{id:'s',name:'s',type:'s',value:'n',note:'s',updatedAt:'d'},
@@ -157,7 +157,7 @@ const TABLES=Object.keys(SCHEMA);
 function norm(t,o){const r={};for(const[k,ty]of Object.entries(SCHEMA[t])){const v=o[k];
   r[k]=ty==='n'?(Number(v)||0):ty==='b'?(v===true||String(v).toLowerCase()==='true'):ty==='d'?(v?String(v).slice(0,10):''):ty==='m'?(v?String(v).slice(0,7):''):String(v??'')}
   return r}
-function normAll(data){const o={};TABLES.forEach(t=>o[t]=(Array.isArray(data[t])?data[t]:[]).filter(x=>x&&x.id).map(x=>norm(t,x)));o.meta={updatedAt:Date.now()};return o}
+function normAll(data){const o={};TABLES.forEach(t=>o[t]=(Array.isArray(data[t])?data[t]:[]).filter(x=>x&&x.id).map(x=>norm(t,x)));if(!o.categories.some(c=>c.id==='fees'))o.categories.push(norm('categories',{id:'fees',name:'Fees & Charges',type:'expense',icon:'🏦',color:'#8a6d5b'}));o.meta={updatedAt:Date.now()};return o}
 function seed(){const C=(name,type,icon,color)=>({id:uid(),name,type,icon,color});
   return normAll({accounts:[{id:uid(),name:'Cash',type:'Cash',initial:0},{id:uid(),name:'Bank',type:'Bank',initial:0}],
   categories:[C('Food & Drinks','expense','🍜','#e07a3f'),C('Transport','expense','🚗','#3f8de0'),C('Shopping','expense','🛍️','#c44fb8'),C('Bills & Utilities','expense','💡','#d6a514'),C('Housing','expense','🏠','#7a6ad8'),C('Health','expense','💊','#e05263'),C('Entertainment','expense','🎬','#2aa9a1'),C('Education','expense','📚','#5b7fd1'),C('Family','expense','👪','#d1785b'),C('Charity','expense','🤲','#4fa36b'),C('Other','expense','📦','#7d8a86'),
@@ -178,15 +178,21 @@ const byId=(t,id)=>S[t].find(x=>x.id===id);
 const acc=id=>byId('accounts',id), cat=id=>byId('categories',id);
 function upsert(t,o){if(o.id){const i=S[t].findIndex(x=>x.id===o.id);S[t][i]=norm(t,o)}else{o.id=uid();S[t].push(norm(t,o))}return o.id}
 function remove(t,id){S[t]=S[t].filter(x=>x.id!==id)}
+const feeOf=t=>t.type==='transfer'&&t.received>0&&t.received<t.amount?t.amount-t.received:0;
+const recvOf=t=>t.type==='transfer'&&t.received>0?t.received:t.amount;
+const assetOpts=()=>S.assets.map(a=>[a.id,'💎 '+a.name]);
+const nameOf=id=>{const x=acc(id)||byId('assets',id);return x?x.name:'Deleted'};
+function assetEffect(t,sign){if(!t||t.type!=='transfer')return;const f=byId('assets',t.accountId),to=byId('assets',t.toAccountId);if(f)f.value-=sign*t.amount;if(to)to.value+=sign*recvOf(t)}
 const accOpts=()=>S.accounts.filter(a=>!a.archived).map(a=>[a.id,a.name]);
 const catOpts=type=>S.categories.filter(c=>c.type===type).map(c=>[c.id,c.icon+' '+c.name]);
 function balances(){const b={};S.accounts.forEach(a=>b[a.id]=a.initial||0);const add=(id,x)=>{if(id in b)b[id]+=x};
-  for(const t of S.transactions){if(t.type==='income')add(t.accountId,t.amount);else if(t.type==='expense')add(t.accountId,-t.amount);else{add(t.accountId,-t.amount);add(t.toAccountId,t.amount)}}
+  for(const t of S.transactions){if(t.type==='income')add(t.accountId,t.amount);else if(t.type==='expense')add(t.accountId,-t.amount);else{add(t.accountId,-t.amount);add(t.toAccountId,recvOf(t))}}
   const kind={};for(const d of S.debts){kind[d.id]=d.kind;add(d.accountId,d.kind==='owe'?d.amount:-d.amount)}
   for(const p of S.debtPayments)add(p.accountId,kind[p.debtId]==='owe'?-p.amount:p.amount);
   return b}
 function monthTotals(m){let inc=0,exp=0;const byCat={};
-  for(const t of S.transactions){if(!t.date.startsWith(m)||t.type==='transfer')continue;
+  for(const t of S.transactions){if(!t.date.startsWith(m))continue;
+    if(t.type==='transfer'){const f=feeOf(t);if(f){exp+=f;byCat.fees=(byCat.fees||0)+f}continue}
     if(t.type==='income')inc+=t.amount;else exp+=t.amount;byCat[t.categoryId]=(byCat[t.categoryId]||0)+t.amount}
   return{inc,exp,byCat}}
 const debtRemaining=d=>d.amount-S.debtPayments.filter(p=>p.debtId===d.id).reduce((s,p)=>s+p.amount,0);
@@ -199,7 +205,7 @@ const sortedTx=list=>[...list].sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.cr
 function processRecurring(){let n=0;const t=todayStr();
   for(const r of S.recurring){if(!r.active)continue;let guard=0;
     for(;;){const next=addPeriod(r.startDate,r.freq,r.count);if(next>t||(r.endDate&&next>r.endDate)||guard++>600)break;
-      S.transactions.push(norm('transactions',{id:uid(),date:next,type:r.type,amount:r.amount,accountId:r.accountId,toAccountId:r.toAccountId,categoryId:r.categoryId,note:r.note||'Recurring',createdAt:Date.now()}));r.count++;n++}}
+      const nt=norm('transactions',{id:uid(),date:next,type:r.type,amount:r.amount,received:r.received,accountId:r.accountId,toAccountId:r.toAccountId,categoryId:r.categoryId,note:r.note||'Recurring',createdAt:Date.now()});S.transactions.push(nt);assetEffect(nt,1);r.count++;n++}}
   return n}
 function dueBills(){const m=todayStr().slice(0,7),day=+todayStr().slice(8);
   return S.bills.filter(b=>b.active&&!S.billPayments.some(p=>p.billId===b.id&&p.month===m)).map(b=>({b,left:Math.min(b.dueDay,daysIn(m))-day})).filter(x=>x.left<=7).sort((a,b)=>a.left-b.left)}
@@ -230,8 +236,8 @@ function openForm({title,fields,values,onSave,onDelete,saveLabel}){
 /* ---------- views ---------- */
 const monthBar=()=>`<div class="mbar"><button data-act="month" data-d="-1" aria-label="Previous month">‹</button><b>${monthLabel(month)}</b><button data-act="month" data-d="1" aria-label="Next month">›</button></div>`;
 function txRow(t){const c=cat(t.categoryId),a=acc(t.accountId),isT=t.type==='transfer';
-  const title=isT?`${a?a.name:'?'} → ${acc(t.toAccountId)?acc(t.toAccountId).name:'?'}`:(c?c.name:'Uncategorized');
-  const subt=[isT?'Transfer':(a?a.name:''),t.note].filter(Boolean).join(' · ');
+  const title=isT?`${nameOf(t.accountId)} → ${nameOf(t.toAccountId)}`:(c?c.name:'Uncategorized');
+  const subt=[isT?'Transfer'+(feeOf(t)?' · fee '+fmt(feeOf(t)):''):(a?a.name:''),t.note].filter(Boolean).join(' · ');
   const cls=t.type==='income'?'pos':t.type==='expense'?'neg':'',sign=t.type==='income'?'+':t.type==='expense'?'−':'';
   return`<div class="row" data-act="editTx" data-id="${t.id}"><span class="ico" style="${!isT&&c?`background:${c.color}26`:''}">${isT?'⇄':(c?c.icon:'•')}</span><div class="grow"><b>${esc(title)}</b><small>${esc(subt)}</small></div><span class="amt ${cls}">${sign}${fmt(t.amount)}</span></div>`}
 const barCls=p=>p>=1?'o':p>=.8?'w':'';
@@ -252,10 +258,10 @@ const bar2=(v,max)=>`<div class="bar"><i style="width:${max>0?Math.max(0,Math.mi
 V.tx=()=>monthBar()+`<input class="search" id="txq" placeholder="Search note, category, account" value="${esc(txSearch)}">
   <div class="pills">${[['all','All'],['expense','Expenses'],['income','Income'],['transfer','Transfers']].map(([k,l])=>`<button data-act="txFilter" data-f="${k}" class="${txFilter===k?'on':''}">${l}</button>`).join('')}</div><div id="txlist">${txList()}</div>`;
 function txList(){const q=txSearch.trim().toLowerCase();
-  const list=sortedTx(S.transactions.filter(t=>t.date.startsWith(month)&&(txFilter==='all'||t.type===txFilter)&&(!q||[t.note,cat(t.categoryId)?.name,acc(t.accountId)?.name,acc(t.toAccountId)?.name].join(' ').toLowerCase().includes(q))));
+  const list=sortedTx(S.transactions.filter(t=>t.date.startsWith(month)&&(txFilter==='all'||t.type===txFilter)&&(!q||[t.note,cat(t.categoryId)?.name,nameOf(t.accountId),t.toAccountId?nameOf(t.toAccountId):''].join(' ').toLowerCase().includes(q))));
   if(!list.length)return'<div class="empty">No transactions found.</div>';
   const days={};list.forEach(t=>(days[t.date]=days[t.date]||[]).push(t));
-  return Object.entries(days).map(([d,ts])=>{const net=ts.reduce((s,t)=>s+(t.type==='income'?t.amount:t.type==='expense'?-t.amount:0),0);
+  return Object.entries(days).map(([d,ts])=>{const net=ts.reduce((s,t)=>s+(t.type==='income'?t.amount:t.type==='expense'?-t.amount:-feeOf(t)),0);
     return`<div class="dayh"><span>${niceDate(d)}</span><span>${net?fmt(net):''}</span></div><section>${ts.map(txRow).join('')}</section>`}).join('')}
 
 V.budget=()=>{const m=monthTotals(month),bt=S.budgets.reduce((s,x)=>s+x.amount,0),bs=S.budgets.reduce((s,x)=>s+(m.byCat[x.categoryId]||0),0);
@@ -292,7 +298,7 @@ V.debts=()=>{const sec=(kind,title)=>{const l=S.debts.filter(d=>d.kind===kind);i
 
 V.assets=()=>{const n=netWorth();return`<section class="hero"><small>Net worth</small><h2>${fmtH(n.total)}</h2><div class="two"><div><small>Accounts</small><b>${fmtH(n.acc)}</b></div><div><small>Assets</small><b>${fmtH(n.assets)}</b></div></div><div class="two" style="margin-top:8px"><div><small>Receivables</small><b>${fmtH(n.recv)}</b></div><div><small>Debts</small><b>${fmtH(-n.owe)}</b></div></div></section>
   <section><h3>Trend</h3>${nwChart()}</section>
-  ${S.assets.length?`<section><h3>Assets</h3>${S.assets.map(a=>`<div class="row" data-act="editAsset" data-id="${a.id}"><span class="ico">💎</span><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.type)}${a.updatedAt?' · updated '+a.updatedAt:''}</small></div><span class="amt">${fmtH(a.value)}</span></div>`).join('')}</section>`:'<div class="empty">No assets yet. Add investments, gold, vehicles or property and update their value whenever it changes.</div>'}<button class="btn full" data-act="editAsset">+ Add asset</button>`};
+  ${S.assets.length?`<section><h3>Assets</h3>${S.assets.map(a=>`<div class="row" data-act="editAsset" data-id="${a.id}"><span class="ico">💎</span><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.type)}${a.updatedAt?' · updated '+a.updatedAt:''}</small></div><span class="amt">${fmtH(a.value)}</span></div>`).join('')}</section>`:'<div class="empty">No assets yet. Add investments, gold, vehicles or property. Move money in or out with a Transfer, and edit the value here when the market price changes.</div>'}<button class="btn full" data-act="editAsset">+ Add asset</button>`};
 
 V.bills=()=>{const paid=b=>S.billPayments.find(p=>p.billId===b.id&&p.month===month);const act=S.bills.filter(b=>b.active),tot=act.reduce((s,b)=>s+b.amount,0),pd=act.filter(paid).reduce((s,b)=>s+b.amount,0);
   return monthBar()+(S.bills.length?`<section><h3>Paid this month<span>${fmt(pd)} of ${fmt(tot)}</span></h3>${bar2(pd,tot)}</section><section>${S.bills.map(b=>{const p=paid(b);return`<div class="row" data-act="editBill" data-id="${b.id}"><span class="ico">🧾</span><div class="grow"><b>${esc(b.name)}</b><small>${fmt(b.amount)} · due day ${b.dueDay}${b.active?'':' · Inactive'}</small></div>${p?`<button class="tag" data-act="unpayBill" data-id="${p.id}">Paid ✓</button>`:b.active?`<button class="tag o" data-act="payBill" data-id="${b.id}">Pay</button>`:''}</div>`}).join('')}</section>`:'<div class="empty">No bills yet. Add monthly bills to get due-date reminders on the Home screen.</div>')+'<button class="btn full" data-act="editBill">+ Add bill</button>'};
@@ -313,7 +319,7 @@ V.settings=()=>`<section><h3>Automatic backup to Google Sheets</h3>
   <div class="row" data-act="exportJson"><div class="grow"><b>Export full backup (JSON)</b><small>Everything in one file</small></div></div>
   <label class="row"><div class="grow"><b>Import backup (JSON)</b><small>Replaces all data on this phone</small></div><input type="file" id="imp" accept="application/json,.json" hidden></label>
   <div class="row" data-act="reset"><div class="grow"><b class="neg">Erase all data</b><small>Start again from zero</small></div></div></section>
-  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.3 · data is stored on this device</p>`;
+  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.5 · data is stored on this device</p>`;
 function syncText(){if(!cfg.url)return'Not connected. Your data is stored only on this phone.';
   if(cfg.lastError)return'⚠️ Last backup failed: '+esc(cfg.lastError);
   const t=cfg.lastSync?new Date(cfg.lastSync).toLocaleString('en-GB'):'never';
@@ -328,15 +334,16 @@ function dot(){const d=$('#syncdot');d.className=!cfg.url?'':cfg.lastError?'err'
 
 /* ---------- forms ---------- */
 const TYPE_SEG={k:'type',type:'seg',options:[['expense','Expense'],['income','Income'],['transfer','Transfer']]};
-const txFields=()=>[TYPE_SEG,{k:'amount',label:'Amount (Rp)',type:'amount',req:1},
+const txFields=()=>[TYPE_SEG,{k:'amount',label:v=>v.type==='transfer'?'Amount sent (Rp)':'Amount (Rp)',type:'amount',req:1},
+  {k:'received',label:'Amount received (Rp) — leave empty if there is no fee',type:'amount',show:v=>v.type==='transfer'},
   {k:'categoryId',label:'Category',type:'select',options:v=>catOpts(v.type),show:v=>v.type!=='transfer',req:1},
-  {k:'accountId',label:v=>v.type==='transfer'?'From account':'Account',type:'select',options:accOpts,req:1,rr:1},
-  {k:'toAccountId',label:'To account',type:'select',options:v=>accOpts().filter(o=>o[0]!==v.accountId),show:v=>v.type==='transfer',req:1}];
-const cleanTx=v=>{if(v.type==='transfer'){if(v.accountId===v.toAccountId)return'Choose two different accounts';v.categoryId=''}else v.toAccountId=''};
+  {k:'accountId',label:v=>v.type==='transfer'?'From':'Account',type:'select',options:v=>v.type==='transfer'?[...accOpts(),...assetOpts()]:accOpts(),req:1,rr:1},
+  {k:'toAccountId',label:'To',type:'select',options:v=>[...accOpts(),...assetOpts()].filter(o=>o[0]!==v.accountId),show:v=>v.type==='transfer',req:1}];
+const cleanTx=v=>{if(v.type==='transfer'){if(v.accountId===v.toAccountId)return'Choose two different accounts';if(v.received>v.amount)return'Amount received cannot be more than amount sent';if(v.received===v.amount)v.received=0;v.categoryId=''}else{v.toAccountId='';v.received=0;if(!acc(v.accountId))return'Choose an account'}};
 function txForm(id){const t=id?byId('transactions',id):{type:'expense',date:todayStr(),accountId:cfg.lastAcc||''};
   openForm({title:id?'Edit transaction':'Add transaction',values:t,fields:[...txFields(),{k:'date',label:'Date',type:'date',req:1},{k:'note',label:'Note',type:'text'}],
-   onSave:v=>{const e=cleanTx(v);if(e)return e;if(!id)v.createdAt=Date.now();cfg.lastAcc=v.accountId;upsert('transactions',v);month=v.date.slice(0,7)},
-   onDelete:id?()=>{remove('transactions',id);S.billPayments=S.billPayments.filter(p=>p.txId!==id)}:null})}
+   onSave:v=>{const e=cleanTx(v);if(e)return e;if(id)assetEffect(byId('transactions',id),-1);if(!id)v.createdAt=Date.now();if(acc(v.accountId))cfg.lastAcc=v.accountId;upsert('transactions',v);assetEffect(v,1);month=v.date.slice(0,7)},
+   onDelete:id?()=>{assetEffect(byId('transactions',id),-1);remove('transactions',id);S.billPayments=S.billPayments.filter(p=>p.txId!==id)}:null})}
 function accForm(id){const a=id?byId('accounts',id):{type:'Bank'};
   openForm({title:id?'Edit account':'Add account',values:a,fields:[{k:'name',label:'Name',type:'text',req:1},{k:'type',label:'Type',type:'select',options:['Cash','Bank','E-wallet','Credit card','Investment','Other'].map(x=>[x,x])},{k:'initial',label:'Starting balance (Rp)',type:'amount'},...(id?[{k:'archived',label:'Archive (hide from lists)',type:'check'}]:[])],
    onSave:v=>{upsert('accounts',v)},
@@ -344,7 +351,7 @@ function accForm(id){const a=id?byId('accounts',id):{type:'Bank'};
 function catForm(id){const c=id?byId('categories',id):{type:'expense',icon:'🏷️',color:'#3f8de0'};
   openForm({title:id?'Edit category':'Add category',values:c,fields:[...(id?[]:[{k:'type',type:'seg',options:[['expense','Expense'],['income','Income']]}]),{k:'name',label:'Name',type:'text',req:1},{k:'icon',label:'Icon (emoji)',type:'text',req:1},{k:'color',label:'Color',type:'color'}],
    onSave:v=>{upsert('categories',v)},
-   onDelete:id?()=>{if(S.transactions.some(t=>t.categoryId===id)||S.recurring.some(t=>t.categoryId===id)||S.bills.some(t=>t.categoryId===id))return'This category is in use and cannot be deleted. You can rename it.';remove('categories',id);S.budgets=S.budgets.filter(b=>b.categoryId!==id)}:null})}
+   onDelete:id?()=>{if(id==='fees')return'This category is used for transfer fees and cannot be deleted. You can rename it.';if(S.transactions.some(t=>t.categoryId===id)||S.recurring.some(t=>t.categoryId===id)||S.bills.some(t=>t.categoryId===id))return'This category is in use and cannot be deleted. You can rename it.';remove('categories',id);S.budgets=S.budgets.filter(b=>b.categoryId!==id)}:null})}
 function budgetForm(id){const b=id?byId('budgets',id):{};
   const opts=S.categories.filter(c=>c.type==='expense'&&(c.id===b.categoryId||!S.budgets.some(x=>x.categoryId===c.id))).map(c=>[c.id,c.icon+' '+c.name]);
   openForm({title:id?'Edit budget':'Add budget',values:b,fields:[{k:'categoryId',label:'Category',type:'select',options:opts,req:1},{k:'amount',label:'Monthly limit (Rp)',type:'amount',req:1}],
@@ -367,7 +374,7 @@ function debtSheet(id){const d=byId('debts',id),pays=S.debtPayments.filter(p=>p.
   <div class="btns">${rem>0?`<button class="btn" data-act="addPay" data-id="${id}">Record payment</button>`:''}<button class="btn ghost" data-act="editDebt" data-id="${id}">Edit</button></div>`)}
 function assetForm(id){const a=id?byId('assets',id):{type:'Investment'};
   openForm({title:id?'Edit asset':'Add asset',values:a,fields:[{k:'name',label:'Name',type:'text',req:1},{k:'type',label:'Type',type:'select',options:['Investment','Gold','Property','Vehicle','Retirement fund','Other'].map(x=>[x,x])},{k:'value',label:'Current value (Rp)',type:'amount',req:1},{k:'note',label:'Note',type:'text'}],
-   onSave:v=>{v.updatedAt=todayStr();upsert('assets',v)},onDelete:id?()=>remove('assets',id):null})}
+   onSave:v=>{v.updatedAt=todayStr();upsert('assets',v)},onDelete:id?()=>{if(S.transactions.some(t=>t.accountId===id||t.toAccountId===id)&&!confirm('This asset has transfers. They will stay in your history, shown as "Deleted". Delete anyway?'))return'Not deleted';remove('assets',id)}:null})}
 function billForm(id){const b=id?byId('bills',id):{dueDay:1,active:true};
   openForm({title:id?'Edit bill':'Add bill',values:b,fields:[{k:'name',label:'Bill name',type:'text',req:1},{k:'amount',label:'Amount (Rp)',type:'amount',req:1},{k:'dueDay',label:'Due day of month (1–31)',type:'number',req:1},{k:'categoryId',label:'Category',type:'select',options:()=>catOpts('expense'),req:1},{k:'accountId',label:'Usually paid from',type:'select',options:accOpts,req:1},{k:'active',label:'Active',type:'check'}],
    onSave:v=>{v.dueDay=Math.round(+v.dueDay);if(!(v.dueDay>=1&&v.dueDay<=31))return'Due day must be between 1 and 31';upsert('bills',v)},
@@ -420,7 +427,7 @@ const A={
    catch(e){cfg.lastError=e.message;saveCfg();toast('Could not connect: '+e.message)}render()},
  syncNow:async()=>{cfg.dirty=true;toast('Backing up…');await push();toast(cfg.lastError?'Backup failed: '+cfg.lastError:'Backup complete');render()},
  restore:async()=>{if(!confirm('Replace all data on this phone with the Google Sheets backup?'))return;try{const r=await api('pull');if(!r.data||!Array.isArray(r.data.accounts)||!r.data.accounts.length){toast('The backup is empty');return}applyRemote(r.data);toast('Backup restored')}catch(e){toast('Restore failed: '+e.message)}},
- exportCsv:()=>{const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';const rows=[['Date','Type','Amount','Account','To account','Category','Note'],...sortedTx(S.transactions).map(t=>[t.date,t.type,t.amount,acc(t.accountId)?.name,acc(t.toAccountId)?.name,cat(t.categoryId)?.name,t.note])];
+ exportCsv:()=>{const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';const rows=[['Date','Type','Amount','Received','Fee','Account / from','To','Category','Note'],...sortedTx(S.transactions).map(t=>[t.date,t.type,t.amount,t.type==='transfer'?recvOf(t):'',feeOf(t)||'',nameOf(t.accountId),t.toAccountId?nameOf(t.toAccountId):'',cat(t.categoryId)?.name,t.note])];
    download('fintrack-transactions-'+todayStr()+'.csv','﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n'),'text/csv')},
  exportJson:()=>download('fintrack-backup-'+todayStr()+'.json',JSON.stringify(S),'application/json'),
  reset:()=>{if(confirm('Erase ALL data on this phone?')&&confirm('This cannot be undone. Your Google Sheets backup will also be overwritten at the next backup. Continue?')){S=seed();save();toast('All data erased')}}
