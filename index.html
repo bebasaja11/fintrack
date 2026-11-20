@@ -163,7 +163,8 @@ const SCHEMA={
  assets:{id:'s',name:'s',type:'s',value:'n',note:'s',updatedAt:'d'},
  bills:{id:'s',name:'s',amount:'n',dueDay:'n',categoryId:'s',accountId:'s',active:'b'},
  billPayments:{id:'s',billId:'s',month:'m',txId:'s',paidDate:'d'},
- nwHistory:{id:'s',month:'m',value:'n'}
+ nwHistory:{id:'s',month:'m',value:'n'},
+ pending:{id:'s',time:'s',app:'s',text:'s',type:'s',amount:'n',accountId:'s',note:'s',known:'b'}
 };
 const TABLES=Object.keys(SCHEMA);
 function norm(t,o){const r={};for(const[k,ty]of Object.entries(SCHEMA[t])){const v=o[k];
@@ -245,7 +246,7 @@ function openForm({title,fields,values,onSave,onDelete,saveLabel}){
     if(f.type==='splits'){const opts=catOpts('expense');return`<div class="fld"><span>Split between categories</span>${v.splitRows.map((r,i)=>`<div style="display:flex;gap:8px;margin-bottom:8px"><select data-si="${i}" data-sf="c" style="flex:1.4;min-width:0;padding:11px 8px;border-radius:12px;border:1px solid var(--line);background:var(--bg)">${opts.map(([val,l])=>`<option value="${esc(val)}" ${r.c===val?'selected':''}>${esc(l)}</option>`).join('')}</select><input data-si="${i}" data-sf="a" inputmode="numeric" autocomplete="off" placeholder="0" value="${r.a?num(r.a):''}" style="flex:1;min-width:0;padding:11px 10px;border-radius:12px;border:1px solid var(--line);background:var(--bg)">${v.splitRows.length>2?`<button type="button" data-act="splitDel" data-i="${i}" aria-label="Remove" style="width:36px;color:var(--neg)">✕</button>`:''}</div>`).join('')}<div style="display:flex;justify-content:space-between;align-items:center"><button type="button" class="link" data-act="splitAdd">+ Add category</button><small id="splitLeft">${splitLeftText(v)}</small></div></div>`}
     let inp;
     if(f.type==='select'){const opts=typeof f.options==='function'?f.options(v):f.options;if(!opts.some(o=>o[0]===v[f.k]))v[f.k]=f.opt?'':(opts[0]?opts[0][0]:'');
-      inp=`<select data-k="${f.k}">${f.opt?'<option value="">— None —</option>':''}${opts.map(([val,l])=>`<option value="${esc(val)}" ${v[f.k]===val?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
+      inp=`<select data-k="${f.k}">${f.opt?`<option value="">${f.req?'— Choose —':'— None —'}</option>`:''}${opts.map(([val,l])=>`<option value="${esc(val)}" ${v[f.k]===val?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
     else if(f.type==='amount')inp=`<input data-k="${f.k}" data-amount inputmode="numeric" autocomplete="off" placeholder="0" value="${v[f.k]?num(v[f.k]):''}">`;
     else inp=`<input type="${f.type}" data-k="${f.k}" ${f.type==='number'||f.type==='password'?'inputmode="numeric"':''} autocomplete="off" value="${esc(v[f.k]??'')}">`;
     return`<label class="fld"><span>${label}</span>${inp}</label>`}).join('');
@@ -271,7 +272,7 @@ const V={};
 V.home=()=>{const m=monthTotals(month),b=balances(),total=S.accounts.filter(a=>!a.archived).reduce((s,a)=>s+b[a.id],0);
   const due=dueBills(),bi=S.budgets.map(x=>budgetInfo(x,month)),bt=bi.reduce((s,x)=>s+x.avail,0),bs=bi.reduce((s,x)=>s+x.spent,0),al=budgetAlerts(month);
   const recent=sortedTx(S.transactions.filter(t=>t.date.startsWith(month))).slice(0,6);
-  return monthBar()+backupBanner()+`<section class="hero"><small>Total balance</small><h2>${fmtH(total)}</h2><div class="two"><div><small>Income</small><b>${fmt(m.inc)}</b></div><div><small>Expenses</small><b>${fmt(m.exp)}</b></div><div><small>Net</small><b>${fmt(m.inc-m.exp)}</b></div></div></section>
+  return monthBar()+backupBanner()+(S.pending.length?`<section data-act="go" data-sub="pending" style="border:1.5px solid var(--acc)"><div class="row" style="padding:0;border:0"><span class="ico">📥</span><div class="grow"><b>${S.pending.length} pending from notifications</b><small>Tap to review and save</small></div><span class="link">Review</span></div></section>`:'')+`<section class="hero"><small>Total balance</small><h2>${fmtH(total)}</h2><div class="two"><div><small>Income</small><b>${fmt(m.inc)}</b></div><div><small>Expenses</small><b>${fmt(m.exp)}</b></div><div><small>Net</small><b>${fmt(m.inc-m.exp)}</b></div></div></section>
   ${due.length?`<section><h3>Bills due <button class="link" data-act="go" data-sub="bills">All bills</button></h3>${due.map(({b:x,left})=>`<div class="row" data-act="payBill" data-id="${x.id}" data-now="1"><span class="ico">🧾</span><div class="grow"><b>${esc(x.name)}</b><small>${left<0?`Overdue by ${-left} day${left<-1?'s':''}`:left===0?'Due today':`Due in ${left} day${left>1?'s':''}`}</small></div><span class="amt">${fmt(x.amount)}</span></div>`).join('')}</section>`:''}
   ${al.length?`<section><h3>Budget alerts <button class="link" data-act="tab" data-tab="budget">Budget</button></h3>${al.map(x=>{const over=x.spent>x.avail;return`<div class="row" data-act="tab" data-tab="budget"><span class="ico">${over?'🔴':'⚠️'}</span><div class="grow"><b>${esc(x.c.name)}</b><small>${over?'Over by '+fmt(x.spent-x.avail):Math.round(x.spent/x.avail*100)+'% used · '+fmt(x.avail-x.spent)+' left'}</small></div></div>`}).join('')}</section>`:''}
   <div class="scroll">${S.accounts.filter(a=>!a.archived).map(a=>`<div class="chip" data-act="editAcc" data-id="${a.id}"><small>${esc(a.name)}</small><b class="${!cfg.hide&&b[a.id]<0?'neg':''}">${fmtH(b[a.id])}</b></div>`).join('')}</div>
@@ -311,7 +312,7 @@ function nwChart(){const h=[...S.nwHistory].sort((a,b)=>a.month<b.month?-1:1).sl
   const pts=h.map((x,i)=>`${10+i*(280/(h.length-1))},${90-(x.value-mn)/rg*75}`).join(' ');
   return`<div class="big">${fmtH(h[h.length-1].value)}</div><svg viewBox="0 0 300 110" style="width:100%"><polyline points="${pts}" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><text x="10" y="106">${h[0].month}</text><text x="290" y="106" text-anchor="end">${h[h.length-1].month}</text></svg>`}
 
-V.more=()=>`<div class="menu">${[['accounts','👛','Accounts','Wallets, banks, e-wallets'],['goals','🎯','Savings Goals','Track what you save for'],['debts','🤝','Debts & Receivables','Money you owe or lent'],['assets','💎','Assets & Net Worth','Investments and property'],['bills','🧾','Bills','Monthly due dates'],['recurring','🔁','Recurring','Automatic transactions'],['categories','🏷️','Categories','Income and expense types'],['settings','☁️','Backup & Settings','Google Sheets, export']].map(([k,i,t,d])=>`<button data-act="go" data-sub="${k}"><span>${i}</span><b>${t}</b><small>${d}</small></button>`).join('')}</div>`;
+V.more=()=>`<div class="menu">${[['accounts','👛','Accounts','Wallets, banks, e-wallets'],['goals','🎯','Savings Goals','Track what you save for'],['debts','🤝','Debts & Receivables','Money you owe or lent'],['assets','💎','Assets & Net Worth','Investments and property'],['bills','🧾','Bills','Monthly due dates'],['recurring','🔁','Recurring','Automatic transactions'],['categories','🏷️','Categories','Income and expense types'],['pending','📥','Pending'+(S.pending.length?' ('+S.pending.length+')':''),'From bank notifications'],['settings','☁️','Backup & Settings','Google Sheets, export']].map(([k,i,t,d])=>`<button data-act="go" data-sub="${k}"><span>${i}</span><b>${t}</b><small>${d}</small></button>`).join('')}</div>`;
 
 V.accounts=()=>{const b=balances();return`<section>${S.accounts.map(a=>`<div class="row" data-act="editAcc" data-id="${a.id}"><span class="ico">👛</span><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.type)}${a.archived?' · Archived':''}</small></div><span class="amt ${!cfg.hide&&b[a.id]<0?'neg':''}">${fmtH(b[a.id])}</span></div>`).join('')}</section><button class="btn full" data-act="editAcc">+ Add account</button>`};
 
@@ -344,7 +345,7 @@ V.settings=()=>`<section><h3>Automatic backup to Google Sheets</h3>
   <div class="row" data-act="exportJson"><div class="grow"><b>Export full backup (JSON)</b><small>Everything in one file</small></div></div>
   <label class="row"><div class="grow"><b>Import backup (JSON)</b><small>Replaces all data on this phone</small></div><input type="file" id="imp" accept="application/json,.json" hidden></label>
   <div class="row" data-act="reset"><div class="grow"><b class="neg">Erase all data</b><small>Start again from zero</small></div></div></section>
-  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.8 · data is stored on this device</p>`;
+  <p class="mut" style="text-align:center;font-size:12px">FinTrack 1.9 · data is stored on this device</p>`;
 function backupBanner(){const card=(icon,title,text,act)=>`<section data-act="${act}" style="border:1.5px solid ${icon==='⚠️'?'var(--warn)':'var(--neg)'}"><div class="row" style="padding:0;border:0"><span class="ico">${icon}</span><div class="grow"><b>${title}</b><small style="white-space:normal">${text}</small></div></div></section>`;
   if(!cfg.url)return card('☁️','Backup is not connected','Your data exists only on this phone. Clearing Chrome data would erase it. Tap to connect.','goSettings');
   if(cfg.guard)return card('🔴','Backup paused','The backup has more data than this phone. Tap to choose what to do.','guard');
@@ -355,7 +356,36 @@ function syncText(){if(!cfg.url)return'Not connected. Your data is stored only o
   const t=cfg.lastSync?new Date(cfg.lastSync).toLocaleString('en-GB'):'never';
   return(cfg.dirty?'Changes waiting to be backed up. ':'All changes backed up. ')+'Last backup: '+t}
 
-const TITLES={home:'FinTrack',tx:'Transactions',budget:'Budget',reports:'Reports',more:'More',accounts:'Accounts',goals:'Savings Goals',debts:'Debts & Receivables',assets:'Assets & Net Worth',bills:'Bills',recurring:'Recurring',categories:'Categories',settings:'Backup & Settings'};
+V.pending=()=>{const list=[...S.pending].sort((a,b)=>a.time<b.time?1:-1);
+  if(!list.length)return'<div class="empty">Nothing pending.<br>New bank notifications appear here when you open the app online.</div>';
+  return`<section>${list.map(x=>{const a=acc(x.accountId),d=new Date(x.time);return`<div class="row" data-act="pendOpen" data-id="${x.id}"><span class="ico">${x.app==='jago'?'🟧':'🟦'}</span><div class="grow"><b>${x.known?(x.type==='income'?'+':'−')+fmt(x.amount):'Not recognised'}${x.known?'':' <span class="tag o">check</span>'}</b><small>${esc(a?a.name:'?')} · ${d.toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</small><small>${esc(x.known?x.note:x.text)}</small></div><button class="link danger" data-act="pendDel" data-id="${x.id}" aria-label="Discard">✕</button></div>`}).join('')}</section><button class="btn danger full" data-act="pendDelAll">Discard all</button>`};
+/* ---------- bank notification parser ---------- */
+const numBCA=x=>Math.round(parseFloat(x.replace(/,/g,'')))||0;                 // IDR 25,000.00
+const numRp=x=>Math.round(parseFloat(x.replace(/\./g,'').replace(',','.')))||0;  // Rp50.000 / Rp50.000,50
+function parseNotif(app,text){const t=String(text||'').replace(/\s+/g,' ').trim();let m;
+  if(m=t.match(/Pemasukan sebesar IDR\s?([\d,]+(?:\.\d+)?) dari (.+?) di kategori (.+?)\.?$/i))return{known:true,type:'income',amount:numBCA(m[1]),note:'dari '+m[2]+' · '+m[3]};
+  if(m=t.match(/Pengeluaran sebesar IDR\s?([\d,]+(?:\.\d+)?) (?:ke|untuk|di|kepada) (.+?) di kategori (.+?)\.?$/i))return{known:true,type:'expense',amount:numBCA(m[1]),note:m[2]+' · '+m[3]};
+  if(m=t.match(/Pengeluaran sebesar IDR\s?([\d,]+(?:\.\d+)?)(.*?)\.?$/i))return{known:true,type:'expense',amount:numBCA(m[1]),note:m[2].trim()||'Pengeluaran BCA'};
+  if(m=t.match(/Kamu telah melakukan transfer Rp\s?([\d.]+(?:,\d+)?) ke (.+?)\. /i))return{known:true,type:'expense',amount:numRp(m[1]),note:'ke '+m[2]};
+  if(m=t.match(/^(.+?) telah mengirim Rp\s?([\d.]+(?:,\d+)?) ke kamu/i))return{known:true,type:'income',amount:numRp(m[2]),note:'dari '+m[1]};
+  // generic fallback: find an amount and guess direction from keywords
+  const am=t.match(/IDR\s?([\d,]+(?:\.\d+)?)/i)?numBCA(t.match(/IDR\s?([\d,]+(?:\.\d+)?)/i)[1]):t.match(/Rp\s?([\d.]+(?:,\d+)?)/i)?numRp(t.match(/Rp\s?([\d.]+(?:,\d+)?)/i)[1]):0;
+  const inc=/pemasukan|menerima|diterima|masuk|ke kamu|kredit|refund|cashback/i.test(t),exp=/pengeluaran|pembayaran|membayar|bayar|transfer|debit|keluar|qris|top ?up|tarik/i.test(t);
+  return{known:false,type:inc&&!exp?'income':'expense',amount:am,note:t.slice(0,80)}}
+function accountFor(app){const want=app==='jago'?/jago/i:/bca/i;const a=S.accounts.find(x=>!x.archived&&want.test(x.name));return a?a.id:(S.accounts[0]||{}).id||''}
+let inboxBusy=false;
+async function fetchInbox(){if(inboxBusy||!cfg.url||!cfg.setupDone||!navigator.onLine)return;inboxBusy=true;
+  try{const r=await api('inbox');const seen=new Set(cfg.seenInbox||[]),ids=[];let added=0;
+    for(const n of r.items||[]){ids.push(n.id);if(seen.has(n.id))continue;seen.add(n.id);
+      const app=/jago/i.test(n.app)?'jago':'bca',p=parseNotif(app,n.text);
+      S.pending.push(norm('pending',{id:n.id,time:n.time,app,text:n.text,type:p.type,amount:p.amount,accountId:accountFor(app),note:p.note,known:p.known}));added++}
+    cfg.seenInbox=[...seen].slice(-500);
+    if(added){persist();await idb.set('state',S)}await saveCfg();
+    if(ids.length)await api('inboxAck',{ids});
+    if(added){if(!modalOpen)render();toast('📥 '+added+' new from notifications')}}
+  catch(e){/* silent: retried next time the app opens */}
+  inboxBusy=false}
+const TITLES={home:'FinTrack',tx:'Transactions',budget:'Budget',reports:'Reports',more:'More',accounts:'Accounts',goals:'Savings Goals',debts:'Debts & Receivables',assets:'Assets & Net Worth',bills:'Bills',recurring:'Recurring',categories:'Categories',settings:'Backup & Settings',pending:'Pending'};
 const EYE='<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',EYE_OFF='<svg viewBox="0 0 24 24"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>';
 function render(){mtVer++;$('#eye').innerHTML=cfg.hide?EYE_OFF:EYE;$('#eye').setAttribute('aria-label',cfg.hide?'Show balances':'Hide balances');const p=sub||tab;$('#title').textContent=TITLES[p];$('#back').hidden=!sub;$('#view').innerHTML=V[p]();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
@@ -371,17 +401,17 @@ const txFields=()=>[TYPE_SEG,{k:'amount',label:v=>v.type==='transfer'?'Amount se
   {k:'accountId',label:v=>v.type==='transfer'?'From':'Account',type:'select',options:v=>v.type==='transfer'?[...accOpts(),...assetOpts()]:accOpts(),req:1,rr:1},
   {k:'toAccountId',label:'To',type:'select',options:v=>[...accOpts(),...assetOpts()].filter(o=>o[0]!==v.accountId),show:v=>v.type==='transfer',req:1}];
 const cleanTx=v=>{if(v.type==='transfer'){if(v.accountId===v.toAccountId)return'Choose two different accounts';if(v.received>v.amount)return'Amount received cannot be more than amount sent';if(v.received===v.amount)v.received=0;v.categoryId=''}else{v.toAccountId='';v.received=0;if(!acc(v.accountId))return'Choose an account'}};
-function txForm(id,preset){const t={...(id?byId('transactions',id):{type:preset||'expense',date:todayStr(),accountId:cfg.lastAcc||''})};
+function txForm(id,preset,pre){const t={...(id?byId('transactions',id):pre?pre.values:{type:preset||'expense',date:todayStr(),accountId:cfg.lastAcc||''})};
   const sp=splitsOf(t);t.isSplit=!!sp;const firstCat=(catOpts('expense')[0]||[''])[0];t.splitRows=sp?sp.map(x=>({c:x.c,a:x.a})):[{c:t.categoryId||firstCat,a:0},{c:firstCat,a:0}];
   const base=txFields(),isS=v=>v.type==='expense'&&v.isSplit;
-  const fields=[base[0],base[1],base[2],{k:'isSplit',label:'Split between several categories',type:'check',show:v=>v.type==='expense',rr:1},{k:'splitRows',type:'splits',show:isS},{...base[3],show:v=>v.type!=='transfer'&&!isS(v)},...base.slice(4),{k:'date',label:'Date',type:'date',req:1},{k:'note',label:'Note',type:'text'}];
-  openForm({title:id?'Edit transaction':'Add transaction',values:t,fields,
+  const fields=[...(pre?[{k:'orig',type:'info',label:'📩 '+esc(pre.text)}]:[]),base[0],base[1],base[2],{k:'isSplit',label:'Split between several categories',type:'check',show:v=>v.type==='expense',rr:1},{k:'splitRows',type:'splits',show:isS},{...base[3],opt:pre?1:0,show:v=>v.type!=='transfer'&&!isS(v)},...base.slice(4),{k:'date',label:'Date',type:'date',req:1},{k:'note',label:'Note',type:'text'}];
+  openForm({title:id?'Edit transaction':pre?'Save from notification':'Add transaction',values:t,fields,
    onSave:v=>{if(isS(v)){v.categoryId=v.categoryId||firstCat;const rows=v.splitRows.filter(r=>r.a>0);if(rows.length<2)return'Enter amounts for at least two categories';
        const tot=rows.reduce((s,r)=>s+r.a,0);if(tot!==v.amount)return'The split adds up to '+fmt(tot)+', but the amount is '+fmt(v.amount);
        const merged={};rows.forEach(r=>merged[r.c]=(merged[r.c]||0)+r.a);const list=Object.entries(merged).map(([c,a])=>({c,a}));if(list.length<2)return'Choose at least two different categories';
        v.splits=JSON.stringify(list);v.categoryId=list[0].c}else v.splits='';
      const e=cleanTx(v);if(e)return e;if(id)assetEffect(byId('transactions',id),-1);if(!id)v.createdAt=Date.now();if(acc(v.accountId))cfg.lastAcc=v.accountId;
-     const rec={...v};delete rec.isSplit;delete rec.splitRows;upsert('transactions',rec);assetEffect(rec,1);month=v.date.slice(0,7);
+     const rec={...v};delete rec.isSplit;delete rec.splitRows;delete rec.orig;upsert('transactions',rec);if(pre)remove('pending',pre.id);assetEffect(rec,1);month=v.date.slice(0,7);
      if(quickMode)toast('Expense saved');else if(v.type==='expense'){const cats=v.splits?JSON.parse(v.splits).map(x=>x.c):[v.categoryId];const m=v.date.slice(0,7);
        for(const c of cats){const b=S.budgets.find(x=>x.categoryId===c);if(!b)continue;const i=budgetInfo(b,m),n=cat(c)?.name||'';
          if(i.spent>i.avail){toast('🔴 '+n+' is over budget by '+fmt(i.spent-i.avail));break}
@@ -489,6 +519,9 @@ const A={
      if(remote&&!S.transactions.length&&confirm(`A backup with ${remote} transactions was found. Restore it to this phone?`)){cfg.setupDone=true;applyRemote(r.data);toast(restoredText(S))}else{cfg.setupDone=true;cfg.dirty=true;await push();toast(cfg.guard?'Backup paused — see the message':cfg.lastError?'Backup failed: '+cfg.lastError:'Connected and backed up')}}
    catch(e){cfg.lastError=e.message;saveCfg();toast('Could not connect: '+e.message)}render()},
  goSettings:()=>A.go({sub:'settings'}),
+ pendOpen:d=>{const x=byId('pending',d.id);txForm(null,null,{id:x.id,text:x.text,values:{type:x.type,amount:x.amount,accountId:x.accountId,date:iso(new Date(x.time)),note:x.note}})},
+ pendDel:d=>{remove('pending',d.id);save();toast('Discarded')},
+ pendDelAll:()=>{if(confirm('Discard all '+S.pending.length+' pending items?')){S.pending=[];save()}},
  guard:()=>showGuard(),
  guardRestore:async()=>{closeModal();try{const r=await api('pull');if(!r.data||!Array.isArray(r.data.accounts)||!r.data.accounts.length){toast('The backup is empty');return}cfg.guard=null;cfg.lastError='';applyRemote(r.data);toast(restoredText(S))}catch(e){toast('Restore failed: '+e.message)}},
  guardOverwrite:async()=>{if(!confirm('Overwrite the backup with the data on this phone? A copy of the current backup is kept in your history first.'))return;closeModal();cfg.forceNext=true;cfg.dirty=true;cfg.guard=null;cfg.lastError='';await push();toast(cfg.lastError?'Backup failed: '+cfg.lastError:'Backup overwritten');render()},
@@ -576,7 +609,7 @@ async function push(){if(!cfg.url||syncing||!cfg.dirty||!cfg.setupDone)return;if
 function scheduleSync(){if(!cfg.url)return;clearTimeout(syncTimer);syncTimer=setTimeout(push,4000)}
 window.addEventListener('online',push);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){hiddenAt=Date.now();if(cfg.dirty){clearTimeout(syncTimer);push()}}
-  else if(S){if(cfg.pinHash&&hiddenAt&&Date.now()-hiddenAt>60000)showLock();if(processRecurring())save();else if(!modalOpen&&sub!=='settings')render();if(cfg.dirty)scheduleSync()}});
+  else if(S){if(cfg.pinHash&&hiddenAt&&Date.now()-hiddenAt>60000)showLock();if(processRecurring())save();else if(!modalOpen&&sub!=='settings')render();if(cfg.dirty)scheduleSync();fetchInbox()}});
 
 /* ---------- start ---------- */
 (async()=>{try{await idb.open();S=await idb.get('state');Object.assign(cfg,await idb.get('cfg')||{})}catch(e){toast('Storage is unavailable: '+e.message)}
@@ -585,7 +618,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
   const qa0=new URLSearchParams(location.search).get('action');quickMode=qa0==='expense'&&!!cfg.pinHash;if(quickMode)document.body.classList.add('quick');
   if(cfg.pinHash&&!quickMode)showLock();
   if(processRecurring())persist();
-  render();if(cfg.dirty)scheduleSync();
+  render();if(cfg.dirty)scheduleSync();fetchInbox();
   const qa=new URLSearchParams(location.search).get('action');if(qa){history.replaceState(null,'',location.pathname);if(qa==='expense'||qa==='transfer')txForm(null,qa)}
   if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
   if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
